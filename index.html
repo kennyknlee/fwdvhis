@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FWD 顧問專用 - 100% 精準保費對比工具</title>
+    <!-- 引入 Chart.js 用於圖表繪製 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 html2pdf.js 用於匯出 PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root { --fwd-orange: #ff6600; --fwd-dark: #333; --fwd-bg: #f9f9f9; --fwd-blue: #00a1e0; --fwd-red: #d32f2f; }
         body { font-family: 'Segoe UI', 'PingFang HK', sans-serif; margin: 0; background: var(--fwd-bg); }
@@ -28,114 +32,152 @@
         .highlight-box { background: #eef7ff; padding: 15px; border-left: 5px solid #00a1e0; margin-bottom: 20px; }
         .inflation-card { background: #fff0f0; border: 1px solid #ffcccc; padding: 15px; border-radius: 10px; margin-bottom: 20px; }
         .footer-info { font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px; margin-top: 20px; }
+
+        /* 新增：圖表與 PDF 按鈕樣式 */
+        .chart-container { 
+            margin-top: 30px; 
+            padding: 15px; 
+            background: white; 
+            border-radius: 8px; 
+            border: 1px solid #eee; 
+            height: 400px; /* 【修正】給定固定高度，避免匯出時尺寸變形 */
+            position: relative;
+        }
+        .btn-pdf { background: #d32f2f; color: white; border: none; width: 100%; padding: 15px; border-radius: 8px; font-size: 18px; cursor: pointer; font-weight: bold; margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; transition: background 0.3s; }
+        .btn-pdf:hover { background: #b71c1c; }
+
+        /* 新增：避免 PDF 匯出時區塊被從中切斷跑位 */
+        .input-card, .highlight-box, .inflation-card, .comparison-container, .chart-container, .result-panel { 
+            page-break-inside: avoid; 
+            break-inside: avoid; 
+        }
+
+        /* 手機版適配調整 */
+        @media (max-width: 600px) {
+            .row { grid-template-columns: 1fr; }
+            .comparison-container { grid-template-columns: 1fr; }
+            .chart-container { height: 300px; }
+        }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h1>FWD 富衛醫保精算系統</h1>
-    <p>退休保費支出對比分析</p>
-</div>
-
-<div class="container">
-    <div class="input-card">
-        <label>1. 選擇產品計劃</label>
-        <select id="prod" onchange="initVersions()">
-            <option value="vTheOne">至．衛一 (vTheOne) - 私家房</option>
-            <option value="vPrime">尊衛您 (vPrime) - 半私家房</option>
-            <option value="vBooster">倍衛您 (vBooster) - 普通房</option>
-            <option value="vFamily">醫家保 (vFamily) - 普通房</option>
-            <option value="vCANsurance">易衛您 (vCANsurance) - 普通房</option>
-        </select>
-        
-        <div class="row" style="margin-top:15px;">
-            <div>
-                <label>2. 計劃版本</label>
-                <select id="version" onchange="initDeds()"></select>
-            </div>
-            <div>
-                <label>3. 自付費 (HKD)</label>
-                <select id="ded"></select>
-            </div>
-        </div>
-
-        <div class="row">
-            <div>
-                <label>4. 受保人性別</label>
-                <select id="gender">
-                    <option value="Both">不限性別 (Unisex / 男女同價)</option>
-                    <option value="Male">男性 (Male)</option>
-                    <option value="Female">女性 (Female)</option>
-                </select>
-            </div>
-            <div>
-                <label>5. 客戶當前年齡 (下一次生日)</label>
-                <input type="number" id="currentAge" value="50">
-            </div>
-        </div>
+<!-- 將需要匯出 PDF 的範圍包裹起來 -->
+<div id="exportArea">
+    <div class="header">
+        <h1>FWD 富衛醫保精算系統</h1>
+        <p>退休保費支出對比分析</p>
     </div>
 
-    <div class="inflation-card">
-        <label>6. 預期年度醫療通脹 (%)</label>
-        <input type="number" id="inflationRate" value="3.0" step="0.1">
-    </div>
-
-    <div class="highlight-box">
-        <label style="color:#0056b3;">7. 支出對比範圍 (例如 66-85 歲退休期)</label>
-        <div class="row">
-            <div>
-                <small>起始歲數</small>
-                <input type="number" id="startAge" value="66">
+    <div class="container">
+        <div class="input-card">
+            <label>1. 選擇產品計劃</label>
+            <select id="prod" onchange="initVersions()">
+                <option value="vTheOne">至．衛一 (vTheOne) - 私家房</option>
+                <option value="vPrime">尊衛您 (vPrime) - 半私家房</option>
+                <option value="vBooster">倍衛您 (vBooster) - 普通房</option>
+                <option value="vFamily">醫家保 (vFamily) - 普通房</option>
+                <option value="vCANsurance">易衛您 (vCANsurance) - 普通房</option>
+            </select>
+            
+            <div class="row" style="margin-top:15px;">
+                <div>
+                    <label>2. 計劃版本</label>
+                    <select id="version" onchange="initDeds()"></select>
+                </div>
+                <div>
+                    <label>3. 自付費 (HKD)</label>
+                    <select id="ded"></select>
+                </div>
             </div>
-            <div>
-                <small>結束歲數</small>
-                <input type="number" id="endAge" value="85">
-            </div>
-        </div>
-    </div>
 
-    <button class="btn-calc" onclick="calculate()">立即進行對比分析</button>
-
-    <div id="result" class="result-panel" style="display:none;">
-        <div style="text-align: center;">
-            <p id="singleLabel" style="font-weight:bold; margin:0;"></p>
-            <div class="premium-text" id="singleVal"></div>
-            <small style="color:#888;">(現行保費表基準)</small>
-        </div>
-
-        <hr style="border: 0; border-top: 1px dashed #ccc; margin: 25px 0;">
-
-        <p id="rangeLabel" style="font-weight:bold; text-align:center;"></p>
-        
-        <div class="comparison-container">
-            <div class="comp-box no-inflation">
-                <span style="color:#666;">不考慮通脹<br>(基於現行保費表)</span>
-                <span class="val-large" id="sumNoInflation" style="color:#444;"></span>
-            </div>
-            <div class="comp-box with-inflation">
-                <span style="color:var(--fwd-red);">考慮醫療通脹<br>(未來預計支出)</span>
-                <span class="val-large" id="sumWithInflation" style="color:var(--fwd-red);"></span>
+            <div class="row">
+                <div>
+                    <label>4. 受保人性別</label>
+                    <select id="gender">
+                        <option value="Both">不限性別 (Unisex / 男女同價)</option>
+                        <option value="Male">男性 (Male)</option>
+                        <option value="Female">女性 (Female)</option>
+                    </select>
+                </div>
+                <div>
+                    <label>5. 客戶當前年齡 (下一次生日)</label>
+                    <input type="number" id="currentAge" value="50">
+                </div>
             </div>
         </div>
 
-        <div style="text-align: center; margin-top: 20px;">
-            <div class="diff-tag">
-                ⚠️ 通脹預計增加開支：<span id="diffVal"></span>
-            </div>
-            <p style="font-size:14px; color:#555; margin-top:15px;">
-                平均每年支出預計 (含通脹): <span id="avgVal" style="font-weight:bold; color:var(--fwd-red);"></span>
-            </p>
+        <div class="inflation-card">
+            <label>6. 預期年度醫療通脹 (%)</label>
+            <input type="number" id="inflationRate" value="3.0" step="0.1">
         </div>
 
-        <div class="footer-info">
-            * 數據源：vTheOne (2025.06版), vPrime/vBooster (2026版), vCANsurance (2025.06版), vFamily (2024.03版)。<br>
-            * 計算公式：未來第 N 年保費 = 當前費率 × (1 + 通脹%) ^ (目標年齡 - 當前年齡)。
+        <div class="highlight-box">
+            <label style="color:#0056b3;">7. 支出對比範圍 (例如 66-85 歲退休期)</label>
+            <div class="row">
+                <div>
+                    <small>起始歲數</small>
+                    <input type="number" id="startAge" value="66">
+                </div>
+                <div>
+                    <small>結束歲數</small>
+                    <input type="number" id="endAge" value="85">
+                </div>
+            </div>
+        </div>
+
+        <!-- 匯出 PDF 時會隱藏這個計算按鈕 -->
+        <button id="calcBtn" class="btn-calc" onclick="calculate()">立即進行對比分析</button>
+
+        <div id="result" class="result-panel" style="display:none;">
+            <div style="text-align: center;">
+                <p id="singleLabel" style="font-weight:bold; margin:0;"></p>
+                <div class="premium-text" id="singleVal"></div>
+                <small style="color:#888;">(現行保費表基準)</small>
+            </div>
+
+            <hr style="border: 0; border-top: 1px dashed #ccc; margin: 25px 0;">
+
+            <p id="rangeLabel" style="font-weight:bold; text-align:center;"></p>
+            
+            <div class="comparison-container">
+                <div class="comp-box no-inflation">
+                    <span style="color:#666;">不考慮通脹<br>(基於現行保費表)</span>
+                    <span class="val-large" id="sumNoInflation" style="color:#444;"></span>
+                </div>
+                <div class="comp-box with-inflation">
+                    <span style="color:var(--fwd-red);">考慮醫療通脹<br>(未來預計支出)</span>
+                    <span class="val-large" id="sumWithInflation" style="color:var(--fwd-red);"></span>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <div class="diff-tag">
+                    ⚠️ 通脹預計增加開支：<span id="diffVal"></span>
+                </div>
+                <p style="font-size:14px; color:#555; margin-top:15px;">
+                    平均每年支出預計 (含通脹): <span id="avgVal" style="font-weight:bold; color:var(--fwd-red);"></span>
+                </p>
+            </div>
+
+            <!-- 新增：圖表顯示區域 -->
+            <div class="chart-container">
+                <canvas id="premiumChart"></canvas>
+            </div>
+
+            <div class="footer-info">
+                * 數據源：vTheOne (2025.06版), vPrime/vBooster (2026版), vCANsurance (2025.06版), vFamily (2024.03版)。<br>
+                * 計算公式：未來第 N 年保費 = 當前費率 × (1 + 通脹%) ^ (目標年齡 - 當前年齡)。
+            </div>
+            
+            <!-- 新增：PDF 匯出按鈕 -->
+            <button id="pdfBtn" class="btn-pdf" onclick="exportToPDF()">📄 匯出完整分析報告 (PDF給客戶)</button>
         </div>
     </div>
 </div>
 
 <script>
-// --- 數據庫 ---
+// --- 完全保留的數據庫 ---
 const premiumDB = {
     "vPrime": {
         "Standard": {
@@ -281,6 +323,9 @@ function initDeds() {
     }
 }
 
+// 宣告全域的 Chart 實例，方便每次計算時更新
+let premiumChartInstance = null;
+
 function calculate() {
     const p = document.getElementById('prod').value;
     const ver = document.getElementById('version').value;
@@ -307,15 +352,19 @@ function calculate() {
         }
         premiumData = premiumData[gender];
     }
-
-    // 特殊處理：vTheOne 的 "0" 鍵可能直接包含數據（不分性別）
-    // 如果數據結構直接是 {1: xxx, 2: xxx}，則直接使用
     
     const singleVal = premiumData[currentAge] || 0;
     
-    // --- 加總邏輯 ---
+    // --- 加總邏輯與圖表數據準備 ---
     let sumNoInflation = 0;
     let sumWithInflation = 0;
+    
+    // 準備圖表所需的陣列
+    let chartLabels = [];
+    let chartDataNoInf = [];
+    let chartDataWithInf = [];
+    let chartCumNoInf = []; // 累積保費(無通脹)
+    let chartCumWithInf = []; // 累積保費(含通脹)
 
     for(let i = start; i <= end; i++) {
         // 如果超過數據庫最大年齡 (例如100)，取最大年齡的值
@@ -328,12 +377,21 @@ function calculate() {
             console.warn(`Missing premium for age ${i}`);
         }
 
-        sumNoInflation += basePremium;
-
         // 通脹複利計算
         const yearsToFuture = i - currentAge;
         const inflationFactor = Math.pow(1 + inflation, yearsToFuture);
-        sumWithInflation += (basePremium * inflationFactor);
+        const inflatedPremium = basePremium * inflationFactor;
+
+        // 加總計算
+        sumNoInflation += basePremium;
+        sumWithInflation += inflatedPremium;
+
+        // 推入圖表陣列
+        chartLabels.push(i + ' 歲');
+        chartDataNoInf.push(Math.round(basePremium));
+        chartDataWithInf.push(Math.round(inflatedPremium));
+        chartCumNoInf.push(Math.round(sumNoInflation));
+        chartCumWithInf.push(Math.round(sumWithInflation));
     }
 
     const difference = sumWithInflation - sumNoInflation;
@@ -348,6 +406,122 @@ function calculate() {
     document.getElementById('sumWithInflation').innerText = `HK$ ${Math.round(sumWithInflation).toLocaleString()}`;
     document.getElementById('diffVal').innerText = `HK$ ${Math.round(difference).toLocaleString()}`;
     document.getElementById('avgVal').innerText = `HK$ ${Math.round(sumWithInflation/(end-start+1)).toLocaleString()}`;
+
+    // --- 繪製線性圖表 ---
+    renderChart(chartLabels, chartDataNoInf, chartDataWithInf, chartCumNoInf, chartCumWithInf);
+}
+
+// 繪製與更新 Chart 的邏輯
+function renderChart(labels, dataNoInf, dataWithInf, cumNoInf, cumWithInf) {
+    const ctx = document.getElementById('premiumChart').getContext('2d');
+    
+    // 如果圖表已存在，先銷毀才能重新繪製
+    if (premiumChartInstance) {
+        premiumChartInstance.destroy();
+    }
+
+    premiumChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '當年保費 (含通脹)',
+                    data: dataWithInf,
+                    borderColor: '#d32f2f',
+                    backgroundColor: 'rgba(211, 47, 47, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    customCumulative: cumWithInf // 儲存累積數據供 tooltip 讀取
+                },
+                {
+                    label: '當年保費 (無通脹)',
+                    data: dataNoInf,
+                    borderColor: '#666',
+                    backgroundColor: 'transparent',
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0.3,
+                    customCumulative: cumNoInf // 儲存累積數據供 tooltip 讀取
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false, // 【修正】允許我們在 CSS 設定自訂的 height
+            animation: false, // 【關鍵修正】關閉圖表動畫，這樣 PDF 截圖就不會抓到還沒畫完的線條
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            let currentVal = context.parsed.y;
+                            let cumulativeVal = context.dataset.customCumulative[context.dataIndex];
+                            
+                            return [
+                                `${label}: HK$ ${currentVal.toLocaleString()}`,
+                                `累積總保費: HK$ ${cumulativeVal.toLocaleString()}`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'HK$ ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// --- 匯出 PDF 的邏輯 ---
+function exportToPDF() {
+    window.scrollTo(0, 0);
+
+    const element = document.getElementById('exportArea');
+    const calcBtn = document.getElementById('calcBtn');
+    const pdfBtn = document.getElementById('pdfBtn');
+    
+    // 隱藏在 PDF 中不必要的按鈕
+    calcBtn.style.display = 'none';
+    pdfBtn.style.display = 'none';
+
+    // 設定 html2pdf 參數，不再強迫寫死 DOM width 導致跑版
+    const opt = {
+        margin:       10, // 四周 10mm 邊距
+        filename:     'FWD_保費對比分析報告.pdf',
+        image:        { type: 'jpeg', quality: 1.0 },
+        html2canvas:  { 
+            scale: 2, 
+            useCORS: true, 
+            scrollY: 0
+            // 【修正】移除寫死的 width / windowWidth，讓它順應當前畫面截取
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    // 因為圖表已經沒有動畫了，不用等 600 毫秒，直接匯出即可
+    html2pdf().set(opt).from(element).save().then(() => {
+        // 恢復按鈕顯示
+        calcBtn.style.display = 'block';
+        pdfBtn.style.display = 'flex';
+    }).catch(err => {
+        console.error("PDF 匯出失敗：", err);
+        calcBtn.style.display = 'block';
+        pdfBtn.style.display = 'flex';
+        alert("PDF 匯出時發生錯誤，請稍後再試。");
+    });
 }
 
 // 初始化
